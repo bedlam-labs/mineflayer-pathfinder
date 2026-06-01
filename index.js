@@ -5,6 +5,7 @@ const Move = require('./lib/move')
 const Movements = require('./lib/movements')
 const gotoUtil = require('./lib/goto')
 const Lock = require('./lib/lock')
+const { PathSmoother } = require('./lib/pathSmoother')
 
 const Vec3 = require('vec3').Vec3
 
@@ -41,6 +42,9 @@ function inject (bot) {
   bot.pathfinder.searchRadius = -1 // in blocks, limits of the search area, -1: don't limit the search
   bot.pathfinder.enablePathShortcut = false // disabled by default as it can cause bugs in specific configurations
   bot.pathfinder.LOSWhenPlacingBlocks = true
+  bot.pathfinder.useSplineSmoothing = false
+
+  const smoother = new PathSmoother(bot)
 
   bot.pathfinder.bestHarvestTool = (block) => {
     const availableTools = bot.inventory.items()
@@ -92,11 +96,17 @@ function inject (bot) {
     }
     const astarContext = new AStar(start, movements, goal, timeout, tickTimeout, searchRadius)
     let result = astarContext.compute()
-    if (optimizePath) result.path = postProcessPath(result.path)
+    if (optimizePath) {
+      result.path = postProcessPath(result.path)
+      result.path = smoother.smooth(result.path)
+    }
     yield { result, astarContext }
     while (result.status === 'partial') {
       result = astarContext.compute()
-      if (optimizePath) result.path = postProcessPath(result.path)
+      if (optimizePath) {
+        result.path = postProcessPath(result.path)
+        result.path = smoother.smooth(result.path)
+      }
       yield { result, astarContext }
     }
   }
@@ -442,6 +452,7 @@ function inject (bot) {
     if (astarContext && astartTimedout) {
       const results = astarContext.compute()
       results.path = postProcessPath(results.path)
+      results.path = smoother.smooth(results.path)
       pathFromPlayer(results.path)
       bot.emit('path_update', results)
       path = results.path
